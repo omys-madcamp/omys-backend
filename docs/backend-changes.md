@@ -37,8 +37,6 @@
 - **API 계약 변경**: iOS 쪽은 세션 생성 응답의 `session_token`을 저장해뒀다가 이후 모든 활동 세션 요청에 `X-Participant-Token`과 동일한 방식으로 `X-Session-Token` 헤더로 실어 보내야 함.
 - 영향받은 테스트: `tests/test_activities_flow.py` 전체 헤더 추가, `test_activity_session_requires_matching_token` 신규 추가.
 
-> 참고: 미스터리 활동 기능 자체는 이후 제품 결정으로 스코프에서 완전히 빠졌다 (별도 PR). 위 세션 토큰 작업은 그 결정 이전에 들어간 것이라 이 문서에 이력으로만 남는다.
-
 ## 2026-07-21 — Kakao 차량 경로만 쓰던 버그 수정 + 도보 경로에 Tmap 보행자 API 연동
 
 - 이전: `navigation_route()`가 `transport_mode`와 상관없이 무조건 Kakao Mobility의 차량 길찾기 REST API(`apis-navi.kakaomobility.com`)를 호출했음. Kakao는 도보/대중교통 REST API 자체가 없어서, walk 모드 방에서도 이동 화면에 자동차 도로 기준 경로가 나오는 버그가 있었음.
@@ -52,6 +50,20 @@
   - `app/config.py`에 `tmap_api_key` 설정 추가 (`TMAP_API_KEY` env). 값 없으면 walk도 자동으로 직선 fallback되니 배포 전 반드시 채워야 함.
   - 순수 파싱 로직(`_coordinates_from_tmap_pedestrian`, `_finalize_route`, 기존 카카오 파서)에 대한 유닛 테스트 추가 (`tests/test_navigation_routes.py`) — 실제 네트워크 호출 없이 좌표 변환만 검증. 통합 테스트는 `environment == "test"`일 때 항상 직선 fallback을 타서 외부 호출 없이 통과함.
 - 참고: Tmap 앱키는 콘솔(openapi.sk.com)에서 앱에 "경로안내" 상품을 연결해야 동작함 — 연결 직후엔 활성화 시차로 몇 분간 403 `INVALID_API_KEY`가 날 수 있음.
+
+## 2026-07-21 — 미스터리 활동 기능 전체 제거
+
+- 제품 결정으로 "미스터리 활동"(방과 무관한 분위기별 랜덤 활동 추천) 기능을 스코프에서 뺌. `docs/omys-rebuild-spec.md`/`docs/feature-scope.md`엔 핵심 기능으로 나와있지만, 이 결정이 그 문서들보다 우선함. 바로 위 "활동 세션 소유권 검증" 작업은 이 결정 이전에 들어간 것이라 이력으로만 남는다.
+- 제거한 것:
+  - `app/activities.py` 파일 삭제 (활동 카탈로그, mood 선택 로직)
+  - `app/models.py`의 `ActivitySession` 모델 삭제
+  - `app/schemas.py`의 `ActivitySessionCreate`/`ActivityDraw`/`ActivityComplete` 삭제
+  - `app/main.py`의 `GET /api/activities`, `POST /api/activity-sessions`, `GET/POST /api/activity-sessions/{id}/...` (draw/skip/start/complete) 엔드포인트 전부 삭제
+  - `app/security.py`의 `session_token_header` (활동 세션 전용 인증이라 같이 제거)
+  - 분석 이벤트 allowlist(`EVENTS`)에서 `activity_*` 계열 전부 제거, 관리자 통계(`/api/admin/stats`)의 `activity_visitors`/`activity_pageviews` 필드와 집계 로직도 제거
+  - `alembic/versions/e3f7c2a9d456_drop_activity_sessions.py` — `activity_sessions` 테이블 drop (기존 배포된 마이그레이션은 안 건드리고 새 마이그레이션으로 처리)
+  - `tests/test_activities_flow.py` 삭제, `tests/test_admin_stats.py`에서 활동 관련 assertion 제거
+- **API 계약 변경**: iOS 쪽엔 애초에 이 엔드포인트들 아직 안 붙였으니 영향 없음. 혹시 프론트/기획 쪽에 미스터리 활동 화면이 이미 논의됐다면 그쪽에 스코프 제외 공유 필요.
 
 ## 아직 손 안 댄 항목
 
