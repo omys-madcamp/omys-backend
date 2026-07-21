@@ -783,7 +783,7 @@ async def navigation(
     route = cached_route[0] if cached_route else []
     consumed_index = cached_route[1] if cached_route else 0
     if not route or route[-1] != destination:
-        route = await navigation_route(origin, destination)
+        route = await navigation_route(origin, destination, mode)
         consumed_index = 0
     else:
         remaining_route = route[consumed_index:]
@@ -794,7 +794,7 @@ async def navigation(
         )
         nearest = route[next_index]
         if distance_meters(payload.latitude, payload.longitude, nearest[0], nearest[1]) > 80:
-            route = await navigation_route(origin, destination)
+            route = await navigation_route(origin, destination, mode)
             consumed_index = 0
         else:
             consumed_index = max(consumed_index, next_index)
