@@ -1,3 +1,4 @@
+import hashlib
 import html
 import secrets
 import string
@@ -25,6 +26,10 @@ def participant_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def clean_text(value: str) -> str:
     return html.escape(value.strip(), quote=True)
 
@@ -34,7 +39,7 @@ def get_participant(db: Session, room: Room, token: str | None) -> Participant:
         raise HTTPException(401, "참가자 토큰이 필요합니다.")
     participant = db.scalar(
         select(Participant).where(
-            Participant.room_id == room.id, Participant.participant_token == token
+            Participant.room_id == room.id, Participant.token_hash == hash_token(token)
         )
     )
     if not participant:
@@ -49,3 +54,7 @@ def require_host(participant: Participant) -> None:
 
 async def token_header(x_participant_token: str | None = Header(default=None)) -> str | None:
     return x_participant_token
+
+
+async def session_token_header(x_session_token: str | None = Header(default=None)) -> str | None:
+    return x_session_token

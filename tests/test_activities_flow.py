@@ -14,6 +14,10 @@ def create_session(client, anonymous_id="anonymous-activity-user"):
     return response.json()
 
 
+def session_headers(session: dict) -> dict[str, str]:
+    return {"X-Session-Token": session["session_token"]}
+
+
 def test_activity_catalog_contains_only_supported_moods_and_safe_dopamine_items(client):
     response = client.get("/api/activities")
     assert response.status_code == 200
@@ -33,23 +37,26 @@ def test_activity_catalog_contains_only_supported_moods_and_safe_dopamine_items(
 def test_draw_skip_start_complete_and_restore_activity_session(client):
     session = create_session(client)
     session_id = session["id"]
+    headers = session_headers(session)
 
-    first = client.post(f"/api/activity-sessions/{session_id}/draw", json={"mood": "light"})
+    first = client.post(
+        f"/api/activity-sessions/{session_id}/draw", json={"mood": "light"}, headers=headers
+    )
     assert first.status_code == 200, first.text
     first_body = first.json()
     assert first_body["activity"]["mood"] == "light"
 
-    second = client.post(f"/api/activity-sessions/{session_id}/skip")
+    second = client.post(f"/api/activity-sessions/{session_id}/skip", headers=headers)
     assert second.status_code == 200, second.text
     second_body = second.json()
     assert second_body["activity"]["id"] != first_body["activity"]["id"]
 
-    started = client.post(f"/api/activity-sessions/{session_id}/start")
+    started = client.post(f"/api/activity-sessions/{session_id}/start", headers=headers)
     assert started.status_code == 200
     assert started.json()["status"] == "started"
     assert started.json()["started_at"]
 
-    restored = client.get(f"/api/activity-sessions/{session_id}")
+    restored = client.get(f"/api/activity-sessions/{session_id}", headers=headers)
     assert restored.status_code == 200
     assert restored.json()["activity"]["id"] == second_body["activity"]["id"]
     assert restored.json()["status"] == "started"
@@ -57,6 +64,7 @@ def test_draw_skip_start_complete_and_restore_activity_session(client):
     completed = client.post(
         f"/api/activity-sessions/{session_id}/complete",
         json={"result": "success", "party_size": 3},
+        headers=headers,
     )
     assert completed.status_code == 200
     assert completed.json()["result"] == "success"
@@ -65,6 +73,7 @@ def test_draw_skip_start_complete_and_restore_activity_session(client):
     repeated = client.post(
         f"/api/activity-sessions/{session_id}/complete",
         json={"result": "success", "party_size": 3},
+        headers=headers,
     )
     assert repeated.status_code == 200
 
@@ -77,6 +86,22 @@ def test_draw_skip_start_complete_and_restore_activity_session(client):
         assert completed_events == 1
 
 
+def test_activity_session_requires_matching_token(client):
+    session = create_session(client)
+    session_id = session["id"]
+
+    no_token = client.get(f"/api/activity-sessions/{session_id}")
+    assert no_token.status_code == 401
+
+    wrong_token = client.get(
+        f"/api/activity-sessions/{session_id}", headers={"X-Session-Token": "wrong-token"}
+    )
+    assert wrong_token.status_code == 404
+
+    ok = client.get(f"/api/activity-sessions/{session_id}", headers=session_headers(session))
+    assert ok.status_code == 200
+
+
 @pytest.mark.parametrize(
     ("result", "expected_status", "event_name"),
     [
@@ -85,13 +110,19 @@ def test_draw_skip_start_complete_and_restore_activity_session(client):
     ],
 )
 def test_activity_result_variants(client, result, expected_status, event_name):
-    session_id = create_session(client, f"anonymous-{result}-user")["id"]
+    session = create_session(client, f"anonymous-{result}-user")
+    session_id = session["id"]
+    headers = session_headers(session)
     assert (
-        client.post(f"/api/activity-sessions/{session_id}/draw", json={"mood": "funny"}).status_code
+        client.post(
+            f"/api/activity-sessions/{session_id}/draw", json={"mood": "funny"}, headers=headers
+        ).status_code
         == 200
     )
-    assert client.post(f"/api/activity-sessions/{session_id}/start").status_code == 200
-    response = client.post(f"/api/activity-sessions/{session_id}/complete", json={"result": result})
+    assert client.post(f"/api/activity-sessions/{session_id}/start", headers=headers).status_code == 200
+    response = client.post(
+        f"/api/activity-sessions/{session_id}/complete", json={"result": result}, headers=headers
+    )
     assert response.status_code == 200
     assert response.json()["status"] == expected_status
 
@@ -105,13 +136,17 @@ def test_activity_result_variants(client, result, expected_status, event_name):
 
 
 def test_all_activities_can_reset_without_immediate_repeat(client):
-    session_id = create_session(client, "anonymous-exhaust-user")["id"]
-    response = client.post(f"/api/activity-sessions/{session_id}/draw", json={"mood": "dopamine"})
+    session = create_session(client, "anonymous-exhaust-user")
+    session_id = session["id"]
+    headers = session_headers(session)
+    response = client.post(
+        f"/api/activity-sessions/{session_id}/draw", json={"mood": "dopamine"}, headers=headers
+    )
     seen = {response.json()["activity"]["id"]}
     previous = response.json()["activity"]["id"]
 
     for _ in range(9):
-        response = client.post(f"/api/activity-sessions/{session_id}/skip")
+        response = client.post(f"/api/activity-sessions/{session_id}/skip", headers=headers)
         assert response.status_code == 200
         current = response.json()["activity"]["id"]
         assert current != previous
@@ -119,7 +154,7 @@ def test_all_activities_can_reset_without_immediate_repeat(client):
         previous = current
 
     assert len(seen) == 10
-    reset = client.post(f"/api/activity-sessions/{session_id}/skip")
+    reset = client.post(f"/api/activity-sessions/{session_id}/skip", headers=headers)
     assert reset.status_code == 200
     assert reset.json()["list_reset"] is True
     assert reset.json()["activity"]["id"] != previous
