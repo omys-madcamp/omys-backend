@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import secrets
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -45,6 +44,7 @@ from .schemas import (
 from .security import (
     clean_text,
     get_participant,
+    hash_token,
     invite_code,
     participant_token,
     require_host,
@@ -242,9 +242,10 @@ def create_room(payload: RoomCreate, db: Session = Depends(get_db)):
         hide_until_arrival=payload.hide_until_arrival,
         join_closed=payload.join_closed,
     )
+    raw_token = participant_token()
     host = Participant(
         nickname=clean_text(payload.host_nickname),
-        participant_token=participant_token(),
+        token_hash=hash_token(raw_token),
         is_host=True,
     )
     room.participants.append(host)
@@ -254,7 +255,7 @@ def create_room(payload: RoomCreate, db: Session = Depends(get_db)):
     db.commit()
     return {
         "invite_code": code,
-        "participant_token": host.participant_token,
+        "participant_token": raw_token,
         "participant_id": host.id,
         "invite_url": f"{settings.frontend_url}/join/{code}",
     }
@@ -265,17 +266,18 @@ def join_room(code: str, payload: JoinRequest, db: Session = Depends(get_db)):
     room = room_by_code(db, code)
     if room.join_closed or room.status != "waiting":
         raise HTTPException(409, "이 방은 더 이상 참가할 수 없습니다.")
+    raw_token = participant_token()
     participant = Participant(
         room_id=room.id,
         nickname=clean_text(payload.nickname),
-        participant_token=participant_token(),
+        token_hash=hash_token(raw_token),
     )
     db.add(participant)
     add_event(db, "participant_joined", room.id)
     db.commit()
     return {
         "invite_code": room.invite_code,
-        "participant_token": participant.participant_token,
+        "participant_token": raw_token,
         "participant_id": participant.id,
     }
 
@@ -579,7 +581,7 @@ async def navigation(
     route = cached_route[0] if cached_route else []
     consumed_index = cached_route[1] if cached_route else 0
     if not route or route[-1] != destination:
-        route = await navigation_route(origin, destination)
+        route = await navigation_route(origin, destination, mode)
         consumed_index = 0
     else:
         remaining_route = route[consumed_index:]
@@ -590,7 +592,7 @@ async def navigation(
         )
         nearest = route[next_index]
         if distance_meters(payload.latitude, payload.longitude, nearest[0], nearest[1]) > 80:
-            route = await navigation_route(origin, destination)
+            route = await navigation_route(origin, destination, mode)
             consumed_index = 0
         else:
             consumed_index = max(consumed_index, next_index)
@@ -639,10 +641,7 @@ def reveal(
     if room.status not in {"drawn", "navigating"} or not room.selected_place_id:
         raise HTTPException(409, "공개할 수 없는 상태입니다.")
     place = db.get(PlaceCandidate, room.selected_place_id)
-    if payload.admin_key is not None:
-        if not secrets.compare_digest(payload.admin_key, settings.navigation_admin_key):
-            raise HTTPException(403, "관리자 키가 올바르지 않습니다.")
-    elif payload.manual_confirm:
+    if payload.manual_confirm:
         require_host(participant)
     elif room.hide_until_arrival:
         if payload.latitude is None or payload.longitude is None:

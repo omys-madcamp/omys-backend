@@ -1,7 +1,7 @@
 """drop activity_sessions table (mystery activity feature removed)
 
 Revision ID: e3f7c2a9d456
-Revises: b4d2c701a9ef
+Revises: d9b2e6a4f018
 Create Date: 2026-07-21 00:20:00
 """
 
@@ -12,12 +12,13 @@ from alembic import op
 
 
 revision: str = "e3f7c2a9d456"
-down_revision: Union[str, None] = "b4d2c701a9ef"
+down_revision: Union[str, None] = "d9b2e6a4f018"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    op.drop_index(op.f("ix_activity_sessions_session_token_hash"), table_name="activity_sessions")
     op.drop_index(op.f("ix_activity_sessions_status"), table_name="activity_sessions")
     op.drop_index(op.f("ix_activity_sessions_anonymous_session_id"), table_name="activity_sessions")
     op.drop_table("activity_sessions")
@@ -28,6 +29,7 @@ def downgrade() -> None:
         "activity_sessions",
         sa.Column("id", sa.String(length=36), nullable=False),
         sa.Column("anonymous_session_id", sa.String(length=64), nullable=False),
+        sa.Column("session_token_hash", sa.String(length=64), nullable=True),
         sa.Column("selected_mood", sa.String(length=20), nullable=True),
         sa.Column("current_activity_id", sa.String(length=40), nullable=True),
         sa.Column("previously_drawn_activity_ids", sa.JSON(), nullable=False),
@@ -47,4 +49,10 @@ def downgrade() -> None:
     )
     op.create_index(
         op.f("ix_activity_sessions_status"), "activity_sessions", ["status"], unique=False
+    )
+    op.create_index(
+        op.f("ix_activity_sessions_session_token_hash"),
+        "activity_sessions",
+        ["session_token_hash"],
+        unique=True,
     )
