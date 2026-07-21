@@ -2,7 +2,13 @@ import httpx
 import pytest
 
 from app.geo import travel_distance_meters, travel_minutes
-from app.places import CachedPlacesProvider, KakaoPlacesProvider, place_matches_category
+from app.places import (
+    CachedPlacesProvider,
+    KakaoPlacesProvider,
+    infer_category,
+    place_matches_category,
+    query_matches_place,
+)
 from app.schemas import PlaceResult
 from app.services import opening_is_viable
 
@@ -173,3 +179,65 @@ async def test_cached_provider_filters_irrelevant_category_results():
     places = await cached.search("방탈출", 37.5665, 126.9780, "게임·실내 놀거리")
 
     assert [place.external_place_id for place in places] == ["game"]
+
+
+def test_infer_category_resolves_known_discovery_query_without_explicit_category():
+    assert infer_category("보드게임카페", None) == "게임·실내 놀거리"
+    assert infer_category("공원", None) == "관광·산책"
+    assert infer_category("보드게임카페", "쇼핑·구경") == "쇼핑·구경"
+    assert infer_category("아무 검색어", None) is None
+
+
+@pytest.mark.asyncio
+async def test_cached_provider_filters_starbucks_out_of_free_text_board_game_search():
+    class NoisyProvider(KakaoPlacesProvider):
+        async def search(self, query, latitude, longitude, category=None):
+            return [
+                PlaceResult(
+                    external_place_id="game",
+                    name="홍대 보드게임카페",
+                    category="오락,스포츠 > 보드게임카페",
+                    address="서울 마포구",
+                    latitude=latitude,
+                    longitude=longitude,
+                ),
+                PlaceResult(
+                    external_place_id="starbucks",
+                    name="스타벅스 홍대점",
+                    category="음식점 > 카페 > 커피전문점",
+                    address="서울 마포구",
+                    latitude=latitude,
+                    longitude=longitude,
+                ),
+            ]
+
+    provider = NoisyProvider("test-key")
+    await provider.client.aclose()
+    cached = CachedPlacesProvider(provider, ttl=60)
+
+    # No `category` passed — same shape as a client free-text search — must still filter.
+    places = await cached.search("보드게임카페", 37.5665, 126.9780)
+
+    assert [place.external_place_id for place in places] == ["game"]
+
+
+def test_query_matches_place_requires_literal_query_in_name_or_category():
+    starbucks = PlaceResult(
+        external_place_id="starbucks",
+        name="스타벅스 홍대점",
+        category="음식점 > 카페 > 커피전문점",
+        address="서울 마포구",
+        latitude=37.5,
+        longitude=126.9,
+    )
+    board_game_cafe = PlaceResult(
+        external_place_id="game",
+        name="홍대 보드게임카페",
+        category="오락,스포츠 > 보드게임카페",
+        address="서울 마포구",
+        latitude=37.5,
+        longitude=126.9,
+    )
+    assert query_matches_place("보드게임카페", starbucks) is False
+    assert query_matches_place("보드게임카페", board_game_cafe) is True
+    assert query_matches_place("", starbucks) is True
