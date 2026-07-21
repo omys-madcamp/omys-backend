@@ -69,7 +69,6 @@ class RevealRequest(BaseModel):
     longitude: float | None = Field(default=None, ge=-180, le=180)
     accuracy: float | None = Field(default=None, ge=0, le=5000)
     manual_confirm: bool = False
-    admin_key: str | None = Field(default=None, min_length=1, max_length=40)
 
 
 class AnalyticsCreate(BaseModel):

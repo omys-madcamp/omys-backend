@@ -63,13 +63,13 @@ class Room(Base):
 class Participant(Base):
     __tablename__ = "participants"
     __table_args__ = (
-        UniqueConstraint("room_id", "participant_token", name="uq_participant_room_token"),
+        UniqueConstraint("room_id", "token_hash", name="uq_participant_room_token"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), index=True)
     nickname: Mapped[str] = mapped_column(String(20))
-    participant_token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     is_host: Mapped[bool] = mapped_column(Boolean, default=False)
     submission_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -169,6 +169,7 @@ class ActivitySession(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     anonymous_session_id: Mapped[str] = mapped_column(String(64), index=True)
+    session_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
     selected_mood: Mapped[str | None] = mapped_column(String(20), nullable=True)
     current_activity_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     previously_drawn_activity_ids: Mapped[list[str]] = mapped_column(JSON, default=list)

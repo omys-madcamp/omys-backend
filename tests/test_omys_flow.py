@@ -166,38 +166,6 @@ def test_destination_can_be_revealed_by_button_without_arrival(client):
     assert reveal.json()["selected_place"]["name"]
 
 
-def test_destination_can_be_revealed_with_test_admin_key(client):
-    host = create_omys(client)
-    code = host["invite_code"]
-    headers = auth(host["participant_token"])
-    response = client.post(
-        f"/api/rooms/{code}/conditions",
-        headers=headers,
-        json={
-            "transport_mode": "walk",
-            "max_travel_minutes": 90,
-            "party_size": 2,
-        },
-    )
-    assert response.status_code == 200, response.text
-    assert client.post(f"/api/rooms/{code}/start", headers=headers).status_code == 200
-
-    wrong_key = client.post(
-        f"/api/rooms/{code}/reveal",
-        headers=headers,
-        json={"admin_key": "wrong"},
-    )
-    assert wrong_key.status_code == 403
-
-    reveal = client.post(
-        f"/api/rooms/{code}/reveal",
-        headers=headers,
-        json={"admin_key": "1210"},
-    )
-    assert reveal.status_code == 200, reveal.text
-    assert reveal.json()["selected_place"]["name"]
-
-
 def test_admin_metrics_require_key(client):
     assert client.get("/api/admin/stats").status_code == 403
     assert (
