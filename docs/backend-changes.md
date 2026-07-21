@@ -37,6 +37,17 @@
 - **API 계약 변경**: iOS 쪽은 세션 생성 응답의 `session_token`을 저장해뒀다가 이후 모든 활동 세션 요청에 `X-Participant-Token`과 동일한 방식으로 `X-Session-Token` 헤더로 실어 보내야 함.
 - 영향받은 테스트: `tests/test_activities_flow.py` 전체 헤더 추가, `test_activity_session_requires_matching_token` 신규 추가.
 
+## 2026-07-21 — 도보 경로에 Tmap 보행자 API 연동
+
+- 이전 커밋에서 walk/transit이 Kakao 차량 경로를 안 쓰게 막아놓고 직선 fallback으로 대체했는데, 실제 도보 경로가 필요해서 Tmap(SK Open API) 보행자 길찾기를 붙임.
+- `app/services.py`:
+  - `_tmap_pedestrian_route` 추가 — `POST https://apis.openapi.sk.com/tmap/routes/pedestrian` 호출, `appKey` 헤더 인증.
+  - `_coordinates_from_tmap_pedestrian` — 응답 GeoJSON의 `LineString` feature들에서 `[lon, lat]` 좌표를 `(lat, lon)`으로 변환 (카카오 파서와 동일 좌표 관례 유지).
+  - 경로 마무리 로직(`len < 2`면 버리고 origin/destination 보정)은 `_finalize_route`로 공통화해서 Kakao/Tmap 둘 다 재사용.
+  - `navigation_route(origin, destination, mode)`: `mode == "car"` → Kakao 차량 경로, `mode == "walk"` → Tmap 보행자 경로, 그 외(transit) 또는 해당 provider 키 없으면 직선 fallback.
+- `app/config.py`에 `tmap_api_key` 설정 추가 (`TMAP_API_KEY` env). 값 없으면 walk도 자동으로 직선 fallback되니 배포 전 반드시 채워야 함.
+- 순수 파싱 로직(`_coordinates_from_tmap_pedestrian`, `_finalize_route`, 기존 카카오 파서)에 대한 유닛 테스트 추가 (`tests/test_navigation_routes.py`) — 실제 네트워크 호출 없이 좌표 변환만 검증. 통합 테스트는 `environment == "test"`일 때 항상 직선 fallback을 타서 외부 호출 없이 통과함.
+
 ## 아직 손 안 댄 항목 (spec §11 기준)
 
 - rate limit / 검색 캐시 / 내비게이션 경로 캐시가 프로세스 메모리 (다중 인스턴스 시 깨짐, 싱글 인스턴스 MVP는 문제 없음)
