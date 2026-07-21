@@ -31,7 +31,14 @@ from .models import (
     Room,
     Selection,
 )
-from .places import CATEGORIES, CATEGORY_DISCOVERY_QUERIES, places_provider
+from .places import (
+    CATEGORIES,
+    CATEGORY_DISCOVERY_QUERIES,
+    estimate_price_level,
+    is_food_place,
+    is_outdoor_place,
+    places_provider,
+)
 from .schemas import (
     AnalyticsCreate,
     CandidateSubmit,
@@ -481,25 +488,23 @@ async def set_conditions(
             for term in payload.excluded_activities
         ):
             continue
-        if payload.indoor_outdoor == "outdoor" and not (
-            place.is_public_outdoor or "관광" in place.category or "산책" in place.category
-        ):
+        if payload.indoor_outdoor == "outdoor" and not is_outdoor_place(place):
             continue
-        if payload.indoor_outdoor == "indoor" and place.is_public_outdoor:
+        if payload.indoor_outdoor == "indoor" and is_outdoor_place(place):
             continue
-        if payload.includes_food is False and (
-            "맛집" in place.category or "디저트" in place.category
-        ):
+        if payload.includes_food is False and is_food_place(place):
             continue
         if (
             payload.total_available_minutes is not None
             and eta * 2 + settings.min_stay_minutes > payload.total_available_minutes
         ):
             continue
-        if payload.budget_per_person is not None and place.price_level is not None:
-            rough_price = [0, 12000, 25000, 50000, 90000][min(place.price_level, 4)]
-            if rough_price > payload.budget_per_person * 1.5:
-                continue
+        if payload.budget_per_person is not None:
+            estimated_price_level = estimate_price_level(place)
+            if estimated_price_level is not None:
+                rough_price = [0, 12000, 25000, 50000, 90000][min(estimated_price_level, 4)]
+                if rough_price > payload.budget_per_person * 1.5:
+                    continue
         if not opening_is_viable(place, eta):
             continue
         db.add(candidate_from_place(room.id, place))

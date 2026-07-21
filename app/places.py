@@ -164,7 +164,45 @@ FOOD_CATEGORY_TERMS = (
     "피자",
     "술집",
     "주점",
+    "맛집",
+    "디저트",
 )
+
+# Places that read as outdoor regardless of OMYS category (a park is "관광·산책", but a
+# campsite or beach might get discovered under other categories too).
+OUTDOOR_TERMS = (
+    "공원",
+    "산책",
+    "산책로",
+    "둘레길",
+    "전망대",
+    "수목원",
+    "식물원",
+    "해변",
+    "해수욕장",
+    "야외",
+    "노천",
+    "캠핑",
+    "캠핑장",
+    "글램핑",
+    "낚시터",
+    "물놀이",
+    "워터파크",
+    "등산",
+    "한강",
+    "광장",
+)
+
+# Rough per-person price estimate (KRW) by OMYS category, used when a provider doesn't
+# return a price_level (Kakao never does). Intentionally coarse — only meant to catch
+# budgets that are wildly off, same tolerance as the existing price_level-based check.
+CATEGORY_PRICE_ESTIMATE = {
+    "관광·산책": 0,
+    "게임·실내 놀거리": 2,
+    "운동·액티비티": 2,
+    "쇼핑·구경": 1,
+    "데이트코스·이색 체험": 3,
+}
 
 
 def _normalized(value: str) -> str:
@@ -224,6 +262,37 @@ def query_matches_place(query: str, place: PlaceResult) -> bool:
     if not query_norm:
         return True
     return query_norm in _normalized(place.name) or query_norm in _normalized(place.category)
+
+
+def is_food_place(place: PlaceResult) -> bool:
+    category = _normalized(place.category)
+    return any(_normalized(term) in category for term in FOOD_CATEGORY_TERMS)
+
+
+def is_outdoor_place(place: PlaceResult) -> bool:
+    if place.is_public_outdoor:
+        return True
+    name = _normalized(place.name)
+    category = _normalized(place.category)
+    return any(_normalized(term) in name or _normalized(term) in category for term in OUTDOOR_TERMS)
+
+
+def resolve_place_category(place: PlaceResult) -> str | None:
+    """Best-effort OMYS category for a place, inferred from its provider category/name."""
+    for category in CATEGORY_MATCH_TERMS:
+        if place_matches_category(place, category):
+            return category
+    return None
+
+
+def estimate_price_level(place: PlaceResult) -> int | None:
+    """Fall back to a category-based rough price estimate when the provider gives none
+    (Kakao never returns price_level; Google sometimes does)."""
+    if place.price_level is not None:
+        return place.price_level
+    if place.is_public_outdoor:
+        return 0
+    return CATEGORY_PRICE_ESTIMATE.get(resolve_place_category(place))
 
 
 class PlacesProvider(ABC):

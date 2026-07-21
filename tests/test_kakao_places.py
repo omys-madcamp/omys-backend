@@ -5,7 +5,10 @@ from app.geo import travel_distance_meters, travel_minutes
 from app.places import (
     CachedPlacesProvider,
     KakaoPlacesProvider,
+    estimate_price_level,
     infer_category,
+    is_food_place,
+    is_outdoor_place,
     place_matches_category,
     query_matches_place,
 )
@@ -241,3 +244,96 @@ def test_query_matches_place_requires_literal_query_in_name_or_category():
     assert query_matches_place("보드게임카페", starbucks) is False
     assert query_matches_place("보드게임카페", board_game_cafe) is True
     assert query_matches_place("", starbucks) is True
+
+
+def test_is_food_place_matches_provider_category_keywords():
+    starbucks = PlaceResult(
+        external_place_id="starbucks",
+        name="스타벅스 홍대점",
+        category="음식점 > 카페 > 커피전문점",
+        address="서울 마포구",
+        latitude=37.5,
+        longitude=126.9,
+    )
+    board_game_cafe = PlaceResult(
+        external_place_id="game",
+        name="홍대 보드게임카페",
+        category="오락,스포츠 > 보드게임카페",
+        address="서울 마포구",
+        latitude=37.5,
+        longitude=126.9,
+    )
+    assert is_food_place(starbucks) is True
+    assert is_food_place(board_game_cafe) is False
+
+
+def test_is_outdoor_place_from_flag_or_category_keywords():
+    flagged_outdoor = PlaceResult(
+        external_place_id="flagged",
+        name="이름만으로는 모름",
+        category="기타",
+        address="서울",
+        latitude=37.5,
+        longitude=126.9,
+        is_public_outdoor=True,
+    )
+    park_by_name = PlaceResult(
+        external_place_id="park",
+        name="반포 한강공원",
+        category="관광명소 > 공원",
+        address="서울 서초구",
+        latitude=37.5,
+        longitude=126.9,
+    )
+    indoor_place = PlaceResult(
+        external_place_id="climbing",
+        name="성수 실내 클라이밍",
+        category="스포츠,오락 > 클라이밍",
+        address="서울 성동구",
+        latitude=37.5,
+        longitude=126.9,
+    )
+    assert is_outdoor_place(flagged_outdoor) is True
+    assert is_outdoor_place(park_by_name) is True
+    assert is_outdoor_place(indoor_place) is False
+
+
+def test_estimate_price_level_prefers_provider_value_then_category_fallback():
+    priced = PlaceResult(
+        external_place_id="priced",
+        name="장소",
+        category="장소",
+        address="서울",
+        latitude=37.5,
+        longitude=126.9,
+        price_level=3,
+    )
+    free_outdoor = PlaceResult(
+        external_place_id="park",
+        name="반포 한강공원",
+        category="관광명소 > 공원",
+        address="서울 서초구",
+        latitude=37.5,
+        longitude=126.9,
+        is_public_outdoor=True,
+    )
+    pottery_studio = PlaceResult(
+        external_place_id="pottery",
+        name="연남 도자기 작업실",
+        category="체험,공방 > 도자기공방",
+        address="서울 마포구",
+        latitude=37.5,
+        longitude=126.9,
+    )
+    unknown = PlaceResult(
+        external_place_id="unknown",
+        name="정체불명 장소",
+        category="기타",
+        address="서울",
+        latitude=37.5,
+        longitude=126.9,
+    )
+    assert estimate_price_level(priced) == 3
+    assert estimate_price_level(free_outdoor) == 0
+    assert estimate_price_level(pottery_studio) == 3
+    assert estimate_price_level(unknown) is None
