@@ -38,41 +38,95 @@ def _coordinates_from_kakao_directions(payload: dict) -> list[Coordinate]:
     return coordinates
 
 
-async def navigation_route(
-    origin: Coordinate, destination: Coordinate, mode: str = "walk"
-) -> list[Coordinate]:
-    settings = get_settings()
-    fallback = [origin, destination]
-    # Kakao Mobility's directions endpoint only returns car/driving routes. Using it for
-    # walk/transit produced a driving-style path, so only call it when mode is "car" and
-    # keep the straight-line fallback for walk/transit (matches the straight-line ETA model).
-    if mode != "car" or settings.environment == "test" or not settings.kakao_rest_api_key:
-        return fallback
+def _coordinates_from_tmap_pedestrian(payload: dict) -> list[Coordinate]:
+    coordinates: list[Coordinate] = []
+    for feature in payload.get("features") or []:
+        geometry = feature.get("geometry") or {}
+        if geometry.get("type") != "LineString":
+            continue
+        for longitude, latitude in geometry.get("coordinates") or []:
+            point = (float(latitude), float(longitude))
+            if not coordinates or coordinates[-1] != point:
+                coordinates.append(point)
+    return coordinates
 
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            response = await client.get(
-                "https://apis-navi.kakaomobility.com/v1/directions",
-                headers={"Authorization": f"KakaoAK {settings.kakao_rest_api_key}"},
-                params={
-                    "origin": f"{origin[1]},{origin[0]}",
-                    "destination": f"{destination[1]},{destination[0]}",
-                    "priority": "RECOMMEND",
-                    "summary": "false",
-                },
-            )
-            response.raise_for_status()
-            route = _coordinates_from_kakao_directions(response.json())
-    except (httpx.HTTPError, TypeError, ValueError):
-        return fallback
 
+def _finalize_route(
+    route: list[Coordinate], origin: Coordinate, destination: Coordinate
+) -> list[Coordinate] | None:
     if len(route) < 2:
-        return fallback
+        return None
     if route[0] != origin:
         route.insert(0, origin)
     if route[-1] != destination:
         route.append(destination)
     return route
+
+
+async def _kakao_driving_route(
+    settings, origin: Coordinate, destination: Coordinate
+) -> list[Coordinate] | None:
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        response = await client.get(
+            "https://apis-navi.kakaomobility.com/v1/directions",
+            headers={"Authorization": f"KakaoAK {settings.kakao_rest_api_key}"},
+            params={
+                "origin": f"{origin[1]},{origin[0]}",
+                "destination": f"{destination[1]},{destination[0]}",
+                "priority": "RECOMMEND",
+                "summary": "false",
+            },
+        )
+        response.raise_for_status()
+        return _coordinates_from_kakao_directions(response.json())
+
+
+async def _tmap_pedestrian_route(
+    settings, origin: Coordinate, destination: Coordinate
+) -> list[Coordinate] | None:
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        response = await client.post(
+            "https://apis.openapi.sk.com/tmap/routes/pedestrian",
+            params={"version": "1"},
+            headers={
+                "appKey": settings.tmap_api_key,
+                "Content-Type": "application/json",
+            },
+            json={
+                "startX": str(origin[1]),
+                "startY": str(origin[0]),
+                "endX": str(destination[1]),
+                "endY": str(destination[0]),
+                "startName": "출발",
+                "endName": "도착",
+            },
+        )
+        response.raise_for_status()
+        return _coordinates_from_tmap_pedestrian(response.json())
+
+
+async def navigation_route(
+    origin: Coordinate, destination: Coordinate, mode: str = "walk"
+) -> list[Coordinate]:
+    settings = get_settings()
+    fallback = [origin, destination]
+    if settings.environment == "test":
+        return fallback
+
+    # Kakao Mobility's directions endpoint only returns car/driving routes and Tmap's
+    # pedestrian endpoint only returns walking routes, so each provider is scoped to the
+    # transport mode it actually supports. Transit has no routed-path provider yet.
+    try:
+        if mode == "car" and settings.kakao_rest_api_key:
+            route = await _kakao_driving_route(settings, origin, destination)
+        elif mode == "walk" and settings.tmap_api_key:
+            route = await _tmap_pedestrian_route(settings, origin, destination)
+        else:
+            return fallback
+    except (httpx.HTTPError, TypeError, ValueError, KeyError):
+        return fallback
+
+    return _finalize_route(route or [], origin, destination) or fallback
 
 
 def opening_is_viable(place: PlaceResult, eta_minutes: int) -> bool:

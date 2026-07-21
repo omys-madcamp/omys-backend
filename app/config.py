@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     places_provider: str = "mock"
     google_places_api_key: str = ""
     kakao_rest_api_key: str = ""
+    tmap_api_key: str = ""
     admin_api_key: str = "change-me-before-production"
     navigation_admin_key: str = "1210"
     frontend_url: str = "http://localhost:5173"
