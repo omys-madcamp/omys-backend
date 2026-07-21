@@ -38,10 +38,15 @@ def _coordinates_from_kakao_directions(payload: dict) -> list[Coordinate]:
     return coordinates
 
 
-async def navigation_route(origin: Coordinate, destination: Coordinate) -> list[Coordinate]:
+async def navigation_route(
+    origin: Coordinate, destination: Coordinate, mode: str = "walk"
+) -> list[Coordinate]:
     settings = get_settings()
     fallback = [origin, destination]
-    if settings.environment == "test" or not settings.kakao_rest_api_key:
+    # Kakao Mobility's directions endpoint only returns car/driving routes. Using it for
+    # walk/transit produced a driving-style path, so only call it when mode is "car" and
+    # keep the straight-line fallback for walk/transit (matches the straight-line ETA model).
+    if mode != "car" or settings.environment == "test" or not settings.kakao_rest_api_key:
         return fallback
 
     try:
