@@ -76,6 +76,16 @@
 - 영향받은 테스트: `tests/test_kakao_places.py`에 회귀 테스트 추가 (`test_infer_category_resolves_known_discovery_query_without_explicit_category`, `test_cached_provider_filters_starbucks_out_of_free_text_board_game_search`, `test_query_matches_place_requires_literal_query_in_name_or_category`).
 - 남은 몫: iOS 클라이언트가 카테고리 버튼으로 검색할 때 여전히 `category` 파라미터를 같이 보내는 게 제일 정확함 — 이건 서버 쪽 안전망이고 대체제가 아님.
 
+## 2026-07-21 — OMYS 조건 필터 품질 개선 (음식/실내외/예산)
+
+`/api/rooms/{code}/conditions`의 후보 필터링 로직 세 곳을 더 정확하게 다듬음.
+
+- **음식 필터**: `includes_food is False`일 때 `"맛집"`/`"디저트"` 두 단어만 체크하던 걸 `is_food_place()`로 교체 — `places.py`의 `FOOD_CATEGORY_TERMS`(음식점/한식/양식/치킨/술집 등, 이번에 맛집/디저트도 추가)를 재사용해서 훨씬 넓게 잡음.
+- **실내외 판정**: `is_public_outdoor` 플래그는 Mock에서만 채워지고 카카오/구글 파서는 절대 안 채워서, 사실상 `"관광"`/`"산책"` 두 단어 substring 체크로만 동작하고 있었음. `is_outdoor_place()` 추가 — `OUTDOOR_TERMS`(공원/산책로/해변/캠핑/전망대/한강 등) 키워드셋으로 이름+카테고리 판정.
+- **예산 필터**: `price_level`도 구글만 주고 카카오는 항상 `None`이라 예산 필터가 카카오 provider에서는 사실상 no-op였음. `estimate_price_level()` 추가 — provider가 값을 안 주면 `resolve_place_category()`로 추정한 OMYS 카테고리 기반 대략가격(`CATEGORY_PRICE_ESTIMATE`)으로 대체, 그것도 안 되면(야외 아니고 카테고리 추정도 안 되면) 필터를 스킵 (틀린 값으로 걸러내는 것보다 안전).
+- `resolve_place_category()` — 장소의 provider 카테고리/이름만으로 OMYS 카테고리를 역추정하는 범용 헬퍼, `estimate_price_level`이 내부에서 사용. 추첨 랜덤성 자체(어떤 후보가 선정되는지)는 안 건드림 — 후보 풀에 들어가기 전 필터 단계만 개선.
+- 유닛 테스트 추가 (`tests/test_kakao_places.py`): `test_is_food_place_matches_provider_category_keywords`, `test_is_outdoor_place_from_flag_or_category_keywords`, `test_estimate_price_level_prefers_provider_value_then_category_fallback`.
+
 ## 아직 손 안 댄 항목
 
 - transit 모드는 아직 직선 fallback만 있음 (실제 대중교통 경로 provider 미연동, 필요해지면 Tmap 대중교통 API 검토)
