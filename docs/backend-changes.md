@@ -65,6 +65,17 @@
   - `tests/test_activities_flow.py` 삭제, `tests/test_admin_stats.py`에서 활동 관련 assertion 제거
 - **API 계약 변경**: iOS 쪽엔 애초에 이 엔드포인트들 아직 안 붙였으니 영향 없음. 혹시 프론트/기획 쪽에 미스터리 활동 화면이 이미 논의됐다면 그쪽에 스코프 제외 공유 필요.
 
+## 2026-07-21 — 카테고리 없는 자유 검색에 필터링 누락 (스타벅스 버그)
+
+- 이전: `GET /api/rooms/{code}/places/search`는 `category`가 선택 파라미터라, 클라이언트가 텍스트만 보내고(`q=보드게임카페`) `category`를 안 보내면 `place_matches_category()` 검증이 `if not category: return True`로 통째로 스킵됨. 카카오 키워드 검색의 느슨한 매칭 때문에 스타벅스 같은 무관한 결과가 그대로 나감.
+- 이후 (`app/places.py`):
+  - `CATEGORY_BY_DISCOVERY_QUERY` — `CATEGORY_DISCOVERY_QUERIES`를 역으로 매핑해서, 알려진 발견용 검색어("보드게임카페" 등)로 검색하면 `category`가 없어도 해당 카테고리를 추론.
+  - `infer_category(query, category)` — `category`가 있으면 그대로, 없으면 위 역매핑으로 추론.
+  - `query_matches_place(query, place)` — 카테고리 추론도 안 되는 순수 자유 검색어에 대한 최소 안전장치. 검색어 문자열이 결과의 이름/카테고리에 실제로 포함되는지만 확인.
+  - `CachedPlacesProvider.search()`: `effective_category`가 `CATEGORY_MATCH_TERMS`에 있으면 기존 `place_matches_category`로, 없고 검색어가 있으면 `query_matches_place`로 최소 필터링.
+- 영향받은 테스트: `tests/test_kakao_places.py`에 회귀 테스트 추가 (`test_infer_category_resolves_known_discovery_query_without_explicit_category`, `test_cached_provider_filters_starbucks_out_of_free_text_board_game_search`, `test_query_matches_place_requires_literal_query_in_name_or_category`).
+- 남은 몫: iOS 클라이언트가 카테고리 버튼으로 검색할 때 여전히 `category` 파라미터를 같이 보내는 게 제일 정확함 — 이건 서버 쪽 안전망이고 대체제가 아님.
+
 ## 아직 손 안 댄 항목
 
 - transit 모드는 아직 직선 fallback만 있음 (실제 대중교통 경로 provider 미연동, 필요해지면 Tmap 대중교통 API 검토)

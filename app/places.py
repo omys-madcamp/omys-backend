@@ -193,6 +193,39 @@ def place_matches_category(place: PlaceResult, category: str | None) -> bool:
     return any(term in name or term in provider_category for term in normalized_terms)
 
 
+def _build_category_by_discovery_query() -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for category, queries in CATEGORY_DISCOVERY_QUERIES.items():
+        for query in queries:
+            mapping[_normalized(query)] = category
+    return mapping
+
+
+# Maps a known discovery query string (e.g. "보드게임카페") back to its OMYS category, so
+# category filtering still applies when a client searches by free text without also
+# passing `category` explicitly.
+CATEGORY_BY_DISCOVERY_QUERY = _build_category_by_discovery_query()
+
+
+def infer_category(query: str, category: str | None) -> str | None:
+    if category:
+        return category
+    return CATEGORY_BY_DISCOVERY_QUERY.get(_normalized(query))
+
+
+def query_matches_place(query: str, place: PlaceResult) -> bool:
+    """Fallback relevance check for free-text queries with no resolvable category.
+
+    Kakao's keyword search does its own (loose) server-side matching, so unrelated
+    popular chains can leak into results for a specific query like "보드게임카페". Require
+    the query text itself to actually appear in the result's name or category.
+    """
+    query_norm = _normalized(query)
+    if not query_norm:
+        return True
+    return query_norm in _normalized(place.name) or query_norm in _normalized(place.category)
+
+
 class PlacesProvider(ABC):
     @abstractmethod
     async def search(
@@ -623,8 +656,11 @@ class CachedPlacesProvider(PlacesProvider):
                 radius=radius,
                 page_count=page_count,
             )
-        if category in CATEGORY_MATCH_TERMS:
-            result = [place for place in result if place_matches_category(place, category)]
+        effective_category = infer_category(query, category)
+        if effective_category in CATEGORY_MATCH_TERMS:
+            result = [place for place in result if place_matches_category(place, effective_category)]
+        elif query.strip():
+            result = [place for place in result if query_matches_place(query, place)]
         self.cache[key] = (time.monotonic() + self.ttl, result)
         return result
 
