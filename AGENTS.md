@@ -4,6 +4,8 @@
 
 이 레포는 스프린트1에서 집중적으로 작업되고, 스프린트2부터는 전담 인력 없이 iOS/Android 팀이 API만 보고 붙는 구조다. **API 계약을 문서로 정확히 남기는 것이 이 레포에서 제일 중요한 책임이다.**
 
+전체 서비스 명세는 [`docs/omys-rebuild-spec.md`](docs/omys-rebuild-spec.md), 백엔드가 담당하는 범위를 핵심(MVP)/선택으로 나눈 가이드는 [`docs/feature-scope.md`](docs/feature-scope.md)를 참고한다. 새 기능을 시작하기 전에 먼저 이 두 문서를 확인할 것.
+
 ## 이 문서에 대해
 
 이 프로젝트는 Claude Code와 Codex를 함께 쓴다. 두 툴이 서로 다른 지시사항을 보면 어긋나기 쉬우니, 실제 규칙은 전부 이 `AGENTS.md`에만 쓰고 `CLAUDE.md`는 이 파일을 가리키기만 한다. 규칙을 바꿀 땐 반드시 `AGENTS.md`를 수정할 것.
